@@ -1,9 +1,11 @@
 import asyncio
-import aiohttp
-import threading
-from aiohttp import web
-from random import randint
 import json
+import threading
+
+from aiohttp import web, ClientSession
+from random import randint
+
+
 common_dict = {
     'USD': 60,
     'EUR': 70,
@@ -18,24 +20,26 @@ async def fetch(session, url):
         return await response.text()
 
 
-##############################################################################################
-# ############                GETTING CURRENCY                                    ############
-##############################################################################################
+##########################################################################
+# ############                GETTING CURRENCY
+##########################################################################
 # Thread number one
 
 
 async def fetch_currency():
-    """ В первом асинхронном потоке получает раз в N минут из любого удобного открытого источника
+    """ В первом асинхронном потоке получает раз
+        в N минут из любого удобного открытого источника
      (например, отсюда: https://www.cbr-xml-daily.ru/daily_json.js)
       данные о курсе доллара, рубля и евро (по умолчанию).
 
     """
     while True:
-        async with aiohttp.ClientSession() as session:
+        async with ClientSession() as session:
             await asyncio.sleep(N)
-            data = await fetch(session, 'https://www.cbr-xml-daily.ru/daily_json.js')
-            resonse_from_server = json.loads(data, strict=False)
+            data = await fetch(session,
+                               'https://www.cbr-xml-daily.ru/daily_json.js')
 
+            resonse_from_server = json.loads(data, strict=False)
             try:
                 usd_value = resonse_from_server['Valute']['USD']['Value']
                 eur_value = resonse_from_server['Valute']['EUR']['Value']
@@ -43,20 +47,22 @@ async def fetch_currency():
                 print(Exception)
             else:
                 if usd_value != common_dict.get('USD'):
-                    print('Value of {} has changed!'.format(usd_value))
+                    # print('Value of {} has changed!'.format(usd_value))
                     common_dict['USD'] = usd_value
                 if eur_value != common_dict.get('EUR'):
-                    print('Value of {} has changed!'.format(eur_value))
+                    # print('Value of {} has changed!'.format(eur_value))
                     common_dict['EUR'] = eur_value
 
 
-##############################################################################################
-# ############                SERVER IN THREAD                                    ############
-##############################################################################################
-#THREAD NUMBER TWO
+##########################################################################
+# ############                SERVER IN THREAD
+##########################################################################
+# THREAD NUMBER TWO
 def aiohttp_server():
     """ Во втором асинхронном потоке сервер отвечает на HTTP запросы на порту 8080.
-        Необходимо реализовать REST api, отвечающее на запросы следующего вида (тип запроса, url, payload //комментарий):
+        Необходимо реализовать REST api,
+        отвечающее на запросы следующего вида
+        (тип запроса, url, payload //комментарий):
             * GET /usd/get
             * GET /rub/get
             * GET /eur/get
@@ -103,14 +109,19 @@ def run_server(runner):
 
 
 # Thread number three
-async def spit_data_into_console():
+async def spit_data_into_console(currency=None,
+                                 total_amount=None
+                                 ):
     """
     В этом асинхронном потоке раз в минуту выводить в консоль те же данные,
-    что в функции handle_request(), в случае, если изменился курс какой-либо из валют
+    что в ф-ии handle_request(), в случае, если изменился курс к.-либо валюты
     или количество средств относительно предыдущего вывода в консоль.
 
     """
-    pass
+    if currency is not None:
+        print('Value of {} has changed'.format(currency))
+    if total_amount is not None:
+        print('Total amount has changed to {}'.format(total_amount))
 
 
 def main():
