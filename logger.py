@@ -1,8 +1,4 @@
-""" Логирование - это отдельная сущность,
-поэтому было решено вынести ее в отдельный модуль"""
-
 import logging
-import sys
 
 from logging.handlers import TimedRotatingFileHandler
 
@@ -14,12 +10,6 @@ class Logger:
 
     def __init__(self):
         self.logger = None
-
-    @staticmethod
-    def _get_console_handler():
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(Logger.FORMATTER)
-        return console_handler
 
     @staticmethod
     def _get_file_handler():
@@ -40,13 +30,16 @@ class Logger:
         else:
             self.logger.setLevel(logging.INFO)
 
+    # @staticmethod
+    # def get_logging_level():
+    #     return logging.getLogger().getEffectiveLevel()
+
     def get_logger(self,
                    logger_name='currency_handler.log',
                    logger_level='info'):
         self.logger = logging.getLogger(logger_name)
         self.logger.setLevel(logging.INFO)
 
-        self.logger.addHandler(Logger._get_console_handler())
         self.logger.addHandler(Logger._get_file_handler())
 
         # with this pattern, it's rarely necessary to propagate the error up to

@@ -1,15 +1,7 @@
-"""
-Приложение должно быть реализовано в виде модуля с абстрактным классом
-и второго модуля, импортирующего этот класс.
-При инициализации должна быть возможность передать наименования валют.(?)
-
-Библиотеки, рекомендуемые к использованию:
-asyncio, aiohttp, argparse, logging, json, requests
-
-"""
 import argparse
 import asyncio
 import json
+import sys
 
 from aiohttp import web, ClientSession
 from threading import Thread
@@ -29,7 +21,7 @@ class CurrencyHandler(AbstractCurrencyHandler):
     ):
         """ Without initialization values will be taken from Abstract class """
         super().__init__()
-
+        self.external_information_server = 'https://www.cbr-xml-daily.ru/daily_json.js'
         if usd_value is not None:
             self._value_by_currency['USD'] = usd_value
 
@@ -46,6 +38,7 @@ class CurrencyHandler(AbstractCurrencyHandler):
             self._total_amount['RUB'] = rubble_amount
 
         if logger_level == 'debug':
+            self.console_output = True
             self.change_logger_level(logger_level)
 
     async def fetch_currency(self, request_frequency=5):
@@ -59,28 +52,56 @@ class CurrencyHandler(AbstractCurrencyHandler):
             :param request_frequency: частота запросов сервера в секундах
 
         """
+        self._console_output(data='Service has been started')
         while True:
+            changed = {
+                'what_changed': {
+                    'USD': False,
+                    'EUR': False,
+                },
+                'USD_value': 0,
+                'EUR_value': 0,
+            }
             async with ClientSession() as session:
                 await asyncio.sleep(request_frequency)
                 data = await self._fetch_from_information_server(session,
-                                                                 'https://www.cbr-xml-daily.ru/daily_json.js')
+                                                                 self.external_information_server)
 
                 response_from_server = json.loads(data,
                                                   strict=False)
                 try:
-                    # TODO: added retries if request fails
                     usd_value = response_from_server['Valute']['USD']['Value']
                     eur_value = response_from_server['Valute']['EUR']['Value']
+                    self._log_events(
+                        msg='Data from {} has been recieved'.format(self.external_information_server)
+                    )
+                    self._console_output(
+                        API='external service',
+                        data='euro={}. dollar={}'.format(
+                            eur_value,
+                            usd_value
+                        )
+                    )
                 except Exception:
-                    self.logger.critical('Server {} is not responsing!'.format(self.url))
+                    self.logger.critical('Server {} is not responsing!'.format(self.external_information_server))
+
                 else:
                     if usd_value != self._value_by_currency.get('USD'):
-                        await self._spit_data_into_console(currency=usd_value)
+                        changed['what_changed']['USD'] = True
+                        changed['USD_value'] = usd_value
+                        # await self._spit_data_into_console(currency=usd_value)
+                        # print('Waiting usd')
                         self._value_by_currency['USD'] = usd_value
 
                     if eur_value != self._value_by_currency.get('EUR'):
-                        await self._spit_data_into_console(currency=eur_value)
+                        # await self._spit_data_into_console(currency=eur_value)
+                        changed['what_changed']['EUR'] = True
+                        changed['EUR_value'] = eur_value
+                        # print('Waiting amount')
                         self._value_by_currency['EUR'] = eur_value
+
+                    if any(changed.get('what_changed').values()):
+                        await self._hook_currency_values_changed(currency=changed)
 
     def aiohttp_server(self):
         """ Во втором асинхронном потоке сервер отвечает на HTTP запросы на порту 8080.
@@ -127,7 +148,7 @@ class CurrencyHandler(AbstractCurrencyHandler):
                 'usd': usd_amount,
                 'eur': euro_amount,
 
-                'sum': ' {} rub / {} usd / {} eur'.format(
+                'sum': '{} rub / {} usd / {} eur'.format(
                     # TODO: check it here
                     round(rubble_amount +
                           usd_amount*usd_value +
@@ -136,15 +157,17 @@ class CurrencyHandler(AbstractCurrencyHandler):
                           usd_amount +
                           euro_amount * (euro_value/usd_value), 2),
                     round(rubble_amount/euro_value +
-                          usd_amount * (euro_value/usd_value) +
+                          usd_amount * (usd_value/euro_value) +
                           euro_amount, 2),
                 )
             }
+            self._console_output(response, API='/amount/get')
+            self._log_events(msg='API /amount/get. {}'.format(response))
             return web.json_response(response,
                                      # headers={'content-type': 'plain/text'}
                                      )
 
-        async def change_money_amount(request):
+        async def override_money_amount(request):
             """ Utterly change money amount
 
                     {"rub":100.5, "eur":10, "usd":20} ---> changes all currency amount
@@ -154,6 +177,9 @@ class CurrencyHandler(AbstractCurrencyHandler):
 
             """
             data = await request.json()
+            self._console_output(data, API='/amount/set')
+            self._log_events(msg='API /amount/set. {}'.format(data))
+
             self._total_amount['USD'] = data.get('usd',
                                                  self._total_amount.get('USD'))
 
@@ -176,10 +202,16 @@ class CurrencyHandler(AbstractCurrencyHandler):
 
             """
             data = await request.json()
+            self._console_output(data, API='/modify')
+            self._log_events(msg='API /modify. {}'.format(data))
             self._total_amount['USD'] += data.get('usd', 0)
             self._total_amount['EUR'] += data.get('eur', 0)
             self._total_amount['RUB'] += data.get('rub', 0)
 
+            return web.json_response({'result': True})
+
+        async def reverse_console_output_status(request):
+            self.console_output = not self.console_output
             return web.json_response({'result': True})
 
         app = web.Application()
@@ -191,8 +223,10 @@ class CurrencyHandler(AbstractCurrencyHandler):
                 web.get('/eur/get', get_euro_currency),
                 web.get('/rub/get', get_rub_currency),
                 web.get('/amount/get', get_total_money_amount),
-                web.post('/amount/set', change_money_amount),
+                web.post('/amount/set', override_money_amount),
                 web.post('/modify', modify_money_amount),
+
+                web.get('/reverse_console_output_status', reverse_console_output_status),
              ]
         )
         runner = web.AppRunner(app)
@@ -257,8 +291,17 @@ def parse_args():
     return initial_data
 
 
-def main():
-    initial_data = parse_args()
+def main(test_mode=False):
+    if not test_mode:
+        initial_data = parse_args()
+    else:
+        initial_data = {
+            'USD_amount': 1,
+            'EUR_amount': 1,
+            'RUB_amount': 1,
+            'request_frequency': 1,
+            'logger_level': '0',
+        }
 
     currency_handler_obj = CurrencyHandler(
         logger_level=initial_data.get('logger_level'),
@@ -268,27 +311,25 @@ def main():
     )
 
     # отдельный поток для сервера
-    t = Thread(target=currency_handler_obj.run_server,
-               args=(currency_handler_obj.aiohttp_server(),)
-               )
+    t = Thread(
+        target=currency_handler_obj.run_server,
+        args=(currency_handler_obj.aiohttp_server(),)
+    )
     t.start()
 
-    # TODO: check if not fails by inheritance from threading.Thread and override run()
-    # if t.is_alive():
-    #     print('Server started!')
-    # else:
-    #     print('Exception catched!')
-    #     sys.exit(1)
-
-    currency_handler_obj.check_server()
+    if not currency_handler_obj.check_server():
+        # t.terminate()
+        print('Exit Application')
+        sys.exit(2)
 
     # поток для запросов курсов валют
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(
+    loop.create_task(
         currency_handler_obj.fetch_currency(
             initial_data.get('request_frequency')
         )
     )
+    loop.run_forever()
 
 
 if __name__ == '__main__':

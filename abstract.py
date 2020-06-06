@@ -1,6 +1,5 @@
 import asyncio
 import requests
-import sys
 
 from abc import ABCMeta, abstractmethod
 
@@ -13,10 +12,10 @@ class AbstractCurrencyHandler(object,
                               metaclass=ABCMeta):
     @abstractmethod
     def __init__(self):
-        # default value
+        # default values
         self._value_by_currency = {
-            'USD': 60,
-            'EUR': 70,
+            'USD': 68,
+            'EUR': 78,
             'RUB': 1,
         }
         self._total_amount = {
@@ -31,26 +30,46 @@ class AbstractCurrencyHandler(object,
         self._logger_obj = Logger()
         self.logger = self._logger_obj.get_logger()
 
+        self.console_output = False
+
     def change_port(self, port):
         self.port = port
 
     # def change_url(self, url):
     #     self.url = url
 
+    # def get_logger_level(self):
+    #     return self._logger_obj.get_logging_level()
+
     def change_logger_level(self, logger_level):
         self._logger_obj.change_logger_level(logger_level)
 
-    @staticmethod
-    async def _spit_data_into_console(currency=None,
-                                      total_amount=None):
+    def _log_events(self, msg):
+        if self.console_output:
+            return
+        self.logger.info(msg=msg)
 
-        # update console if smth change once in a minute
+    def _console_output(self,
+                        data=None,
+                        API=''):
+        if not self.console_output:
+            return
+        if API:
+            print('API={}'.format(API), data)
+        else:
+            print(data)
+
+    async def _hook_currency_values_changed(self, currency):
         await asyncio.sleep(60)
 
-        if currency is not None:
-            print('Value of {} has changed'.format(currency))
-        if total_amount is not None:
-            print('Total amount has changed to {}'.format(total_amount))
+        response = ''
+        if currency['what_changed']['USD']:
+            response += 'USD has changed to {}'.format(currency['USD_value'])
+            response += ' '
+        if currency['what_changed']['EUR']:
+            response += 'EUR has changed to {}'.format(currency['EUR_value'])
+        print(response)
+        self.logger.info(response)
 
     @staticmethod
     async def _fetch_from_information_server(session, url):
@@ -77,7 +96,7 @@ class AbstractCurrencyHandler(object,
                 'Cannot request {}:{}. Error: {}'.format(LOCALHOST,
                                                          self.port,
                                                          e))
-            sys.exit(1)
+            return False
 
         if req.status_code == 200:
             self.logger.debug('Server has been starter. '
@@ -86,6 +105,7 @@ class AbstractCurrencyHandler(object,
                                                self.port))
             self.logger.debug('Initial amount: {}'.format(self._total_amount))
             self.logger.info('Server Started')
+            return True
         else:
             self.logger.critical('Server is not Started')
-            sys.exit(1)
+            return False
