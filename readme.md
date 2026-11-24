@@ -1,127 +1,157 @@
-## Общее описание
-Микросервис, использующий httpio. Задействует несколько потоков.  Используется python 3.7
+# Currency Exchange Service
 
-* В одном потоке асинхронно сервер получает данные о курсе доллара, рубля и евро
-* В другом потоке сервер асинхронно отвечает на HTTP запросы на порту 8080. Реализовано REST API (см. документацию)
+A lightweight asynchronous microservice for tracking currency exchange rates and managing balances in multiple currencies.
 
-## Документация
-REST API, отвечает на запросы следующего вида 
-(тип запроса, url, payload //комментарий):
+The application is built with Python 3.7, `asyncio`, and `httpio`. It uses multiple threads to handle currency rate updates and incoming HTTP requests concurrently.
 
-* GET /usd/get
-* GET /rub/get
-* GET /eur/get
-* POST /amount/set *{"usd":10}*
-* POST /amount/set *{"rub":100.5, "eur":10, "usd":20}*
-* POST /modify *{"usd":5}* // добавить к текущему количеству usd 5
-* POST /modify *{"eur":10, "rub":-20}* // добавить к текущему количеству eur 10, уменьшить текущее количество rub на 20 
-* GET /reverse_console_output_status // изменяет значения флага debug для вывода данных в консоль/лог
-* GET /amount/get отвечает общей суммой средств для каждой из трёх валют с учётом текущего курса, 
-количеством каждой из валют отдельно и текущим курсом.
-    * пример ответа: **{"rub-usd": 68.6319, "rub-eur": 77.9658, "usd-eur": 1.14, "rub": 0, "usd": 0, "eur": 0, "sum": "0.0 rub / 0.0 usd / 0.0 eur"}**
-* На остальные запросы в случае успеха возвращается **{'result': True}**
+## Features
 
-## Реализация приложения
-Микросервис реализован на трендовом стеке - asyncio, httpio. 
+- Asynchronous exchange rate updates from a remote data provider.
+- REST API for managing currency balances.
+- Support for RUB, USD, and EUR.
+- Automatic balance conversion using current exchange rates.
+- Configurable update intervals.
+- Logging and optional debug output.
+- Integration tests using pytest.
 
-Приложение состоит из модуля с абстрактным классом
-и второго модуля, импортирующего этот класс.
+## REST API
 
-Абстрактный класс *AbstractCurrencyHandler*.
+The HTTP server listens on port `8080`.
 
-Класс для работы приложения *CurrencyHandler*
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/usd/get` | Get the current USD balance. |
+| GET | `/rub/get` | Get the current RUB balance. |
+| GET | `/eur/get` | Get the current EUR balance. |
+| POST | `/amount/set` | Set currency balances. |
+| POST | `/modify` | Increase or decrease existing balances. |
+| GET | `/amount/get` | Get all balances, exchange rates, and total amounts. |
+| GET | `/reverse_console_output_status` | Toggle console debug output. |
 
-Логирование - это отдельная сущность, поэтому она вынесена в отдельный модуль *logger.py*
+### Examples
 
-Интеграционные тесты находятся в модуле *tests.py*. Запускаются следующим образом:
-***pytest** -v tests.py* 
+Set currency balances:
 
-## Логирование
-Логирование осуществляется через стандартный модуль logging. Аттрибуты определены в классе *AbstractCurrencyHandler*:
-
-Формат лога: **'%(asctime)s — %(name)s — %(levelname)s — %(message)s')**
-
-Вид лога:
-
-*2020-06-05 17:46:41,055 — currency_handler.log — DEBUG — Initial amount: {'USD': 0, 'EUR': 0, 'RUB': 0}*
-
-*2020-06-05 17:46:41,055 — currency_handler.log — INFO — Server Started*
-
-*2020-06-05 17:47:46,171 — currency_handler.log — INFO — USD has changed to 68.6319 EUR has changed to 77.9658*
-   
-* _log_events() используется для занесения информации в лог-файл **currency_handler.log**
-* _console_output() выводит данные в консоль
-* _hook_currency_values_changed() выводит информацию в консоль и в лог файл, если изменилась стомость валюты
-
-## Запуск приложения
-
-Запуск приложения возможен с аргументами командной строки. 
-
-Можно задать 5 аргументов:
-   
-   * ***--eur*** - количество евро (по-умолчанию 0)
-   * ***--rub*** - количество рублей (по-умолчанию 0)
-   * ***--usd*** - количество долларов (по-умолчанию 0)
-   * ***--period*** - частота в секундах опроса удаленного сервера с данными о курсах валют (по-умолчанию 5 )
-   * ***--debug*** - режим дебага (по-умолчанию *False*). Возможные значения для перевода в *True*:
-        * 1, True, true, y, Y
-   
-   В случае, если debug не передается, вся информация о запросах сервера записывается в лог файл. 
-   
-   Если задается не *falsy* значение параметра debug, то данные о запросах удаленного информационного сервера
-   печатаются в консоль, а также данные POST-запросов к серверу выводятся в консоль. 
-   
-   Можно изменить поведение приложение вызвав API */reverse_console_output_status*
-   
-   Для анализа и парсинга аргументов командной строки используется модуль 
-   [**argparse**](https://docs.python.org/3/library/argparse.html)
-   
-   Примеры запуска приложения из командной строки: 
-   
-   ***python** currency_handler.py --eur 10 --usd 5 --rub 100 --period 5 --debug true*
-   
-   ***python** currency_handler.py --eur 10 --debug true*
-   
-   ***python** currency_handler.py --eur 10*
-   
-   ***python** currency_handler.py*
-   
-## Возможные улучшения
-
-* В данный момент для логгирования и вывода данных при дебаге используется три сущности. 
-Можно изменить это поведение добавив *Handler* для консоли, 
-т.е. реализовав внутри класса *Logger* функцию *get_file_handler()* и использовать этот обработчик:
-```self.logger.addHandler(Logger._get_file_handler())```
-
-* [Традиционная](https://vorpus.org/blog/control-c-handling-in-python-and-trio/) проблема при работе с asyncio и потоками - задача *graceful shutdown*, 
-в данный момент этого нет. 
-При попытке с помощью **ctrl+c** прервать работу приложения не останавливается event-loop и запущенный поток.
-Проблема усугубляется тем, что в потоке запущен отдельный event-loop. 
-Event-loop, который запрашивает курсы валют можно остановить так:
-
+```json
+{
+  "usd": 10,
+  "rub": 100.5,
+  "eur": 20
+}
 ```
-    try:
-        loop.run_until_complete()
-    except KeyboardInterrupt as e:
-        print("Caught keyboard interrupt. Graceful shutdown...")
-    finally:
-        loop.close()
-```
- при этом вероятна ошибка *asyncio cannot close a running event loop*, 
- потому что после запуска начнутся сетевые I/O операции. 
- 
- Непонятно, как при этом быть с запущенным потоком. 
- Можно было бы создать собственный класс, унаследованный от *Thread* традиционным образом 
- и переопределить метод **run()**, но внутри запущен loop..
- 
- * Внутри класса *CurrencyHandler* корутина *fetch_currency* 
- запрашивает данные у информационного сервера с курсами валют. 
- Нужно добавить несколько попыток запроса, ограниченные значением *max_retries*, в том случае, 
- если запросы падают и удаленный сервер не отдает данные.
- 
-## Примечание
-Приложение написано с огромным уважением к ***PEP8***, но кое-где не соблюдается максимальная длина строк. 
-Впрочем, внутри стандартных модулей Python есть стилистические нарушения значительно серьезнее.. 
 
-Как написано в самом первоисточнике 
-*"sometimes style guide recommendations just aren't applicable. When in doubt, use your best judgment"*.
+Modify existing balances:
+
+```json
+{
+  "usd": 5,
+  "eur": 10
+}
+```
+
+Get all balances and exchange rates:
+
+```http
+GET /amount/get
+```
+
+Example response:
+
+```json
+{
+  "rub-usd": 68.6319,
+  "rub-eur": 77.9658,
+  "usd-eur": 1.14,
+  "rub": 0,
+  "usd": 0,
+  "eur": 0,
+  "sum": "0.0 rub / 0.0 usd / 0.0 eur"
+}
+```
+
+Successful operations return:
+
+```json
+{
+  "result": true
+}
+```
+
+## Project Structure
+
+```text
+.
+├── abstract.py
+├── currency_handler.py
+├── logger.py
+├── readme.md
+├── requirements.txt
+└── tests.py
+```
+
+- `abstract.py` — abstract base class defining common application functionality.
+- `currency_handler.py` — main application logic and HTTP server.
+- `logger.py` — logging configuration and utilities.
+- `tests.py` — integration tests.
+
+## Getting Started
+
+### Requirements
+
+- Python 3.7
+- pip
+
+### Installation
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Running the Application
+
+Start the service with default settings:
+
+```bash
+python currency_handler.py
+```
+
+The HTTP server listens on port `8080`. By default, all currency balances are initialized to zero, and exchange rates are updated every 5 seconds.
+
+### Command-Line Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `--eur` | Initial EUR balance | `0` |
+| `--rub` | Initial RUB balance | `0` |
+| `--usd` | Initial USD balance | `0` |
+| `--period` | Exchange rate update interval (seconds) | `5` |
+| `--debug` | Enable debug output | `False` |
+
+Examples:
+
+```bash
+python currency_handler.py --eur 10 --usd 5 --rub 100 --period 5 --debug true
+```
+
+```bash
+python currency_handler.py --eur 10 --debug true
+```
+
+## Testing
+
+Run integration tests using pytest:
+
+```bash
+pytest -v tests.py
+```
+
+## Logging
+
+The application uses Python's standard `logging` module.
+
+Application events and exchange rate updates are recorded in `currency_handler.log`.
+
+Debug mode additionally enables console output for incoming requests and exchange rate updates.
+
